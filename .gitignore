@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+data/audio_files/
+data/augmented_data/
+dist/
+build/
+.env
+models/offline_ai_model/model_state.pt
+recordings/

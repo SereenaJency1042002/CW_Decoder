@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: morse-decoder
+Version: 1.0.0
+Summary: Intelligent Morse Code Decoder — decodes audio files using signal processing and K-Means clustering
+Author-email: Sereena Jency <sereena2342@gmail.com>
+Requires-Python: >=3.11
+Requires-Dist: librosa>=0.11.0
+Requires-Dist: scipy>=1.17.1
+Requires-Dist: scikit-learn>=1.8.0
+Requires-Dist: numpy>=2.4.6
+Requires-Dist: matplotlib>=3.10.9
+Requires-Dist: customtkinter>=5.2.2
+Requires-Dist: sounddevice>=0.5.5
+Requires-Dist: soundfile>=0.13.1
+Requires-Dist: groq>=0.11.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: transformers>=4.40.0
