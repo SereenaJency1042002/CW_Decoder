@@ -61,10 +61,9 @@ One class per file — each has a single responsibility and can be changed indep
 ## Project Structure
 
 ```
-morse_project/
+CW_Decoder/
 ├── main.py                    # entry point
 ├── pyproject.toml             # dependencies
-├── main.spec                  # PyInstaller build spec
 ├── src/
 │   ├── audio_loader.py
 │   ├── signal_filter.py
@@ -76,7 +75,7 @@ morse_project/
 │   ├── signal_visualizer.py
 │   ├── live_decoder.py
 │   ├── ui_display.py
-│   └── tools/                 # training/testing utilities (not shipped in the exe)
+│   └── tools/                 # training/testing utilities
 │       ├── data_augmentor.py      # builds noisy train/val sets from data/audio_files/
 │       ├── generate_training_pairs.py
 │       ├── hmm_trainer.py         # trains models/hmm_model.pkl
@@ -97,18 +96,11 @@ morse_project/
 
 ## How to Run
 
-### Option A — Run the EXE (no Python required)
-
-1. Open `dist\MorseDecoder\`
-2. Double-click `MorseDecoder.exe`
-
-### Option B — Run from source
-
 Requires Python 3.11+.
 
 ```bash
-git clone https://github.com/SereenaJency1042002/MORSE_CODE.git
-cd MORSE_CODE
+git clone https://github.com/SereenaJency1042002/CW_Decoder.git
+cd CW_Decoder
 python -m venv venv
 venv\Scripts\activate        # Windows PowerShell
 pip install .
@@ -135,5 +127,4 @@ Get a free key at [console.groq.com](https://console.groq.com).
 |---|---|
 | `ModuleNotFoundError` | Activate the venv and run `pip install .` |
 | PowerShell blocks `Activate.ps1` | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| EXE flagged by antivirus | False positive common with PyInstaller — add an exception |
 | AI correction does nothing differently | Offline mode is expected to be conservative; set `GROQ_API_KEY` for the stronger cloud model |
