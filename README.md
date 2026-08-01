@@ -29,7 +29,6 @@ One class per file — each has a single responsibility and can be changed indep
 | `AudioLoader` | `src/audio_loader.py` | Load WAV/MP3 |
 | `SignalFilter` | `src/signal_filter.py` | FFT tone detection + Butterworth bandpass |
 | `MorseDecoder` | `src/morse_decoder.py` | RMS → K-Means → dictionary lookup → text (used by both file and live decoding) |
-| `HMMDecoder` | `src/hmm_decoder.py` | Alternative decoder using a trained Hidden Markov Model — validated against `MorseDecoder` in testing, not currently wired into the app |
 | `IntelligentCorrector` | `src/intelligent_corrector.py` | Hamming distance (symbols) + Levenshtein distance (words), always active, fully offline |
 | `OfflineAI` | `src/offline_ai.py` | Fine-tuned local T5 model — default AI corrector, works with no internet/API key |
 | `AIPredictor` | `src/ai_predictor.py` | Groq-hosted LLaMA 3.3 70B — used instead of `OfflineAI` when a `GROQ_API_KEY` is set |
@@ -47,6 +46,8 @@ One class per file — each has a single responsibility and can be changed indep
 
 1. **IntelligentCorrector** (always active, offline) — fixes single-symbol errors via Hamming distance and near-miss words via Levenshtein distance, both capped at 1 edit to avoid wrong guesses.
 2. **AI layer** (`OfflineAI` or `AIPredictor`) — context-aware pass on top of layer 1: protects callsigns, recognises ham radio conventions (`CQ`, `DE`, `73`, `SK`...), and fills in `?` gaps where context makes the answer unambiguous. Falls back to the uncorrected text silently if it fails.
+
+An HMM-based decoder (Viterbi over dot/dash timing) was also prototyped and benchmarked against `MorseDecoder`'s K-Means approach; K-Means performed comparably, so it was kept as the production path and the HMM experiment now lives in a separate exploration project.
 
 ---
 
@@ -68,7 +69,6 @@ CW_Decoder/
 │   ├── audio_loader.py
 │   ├── signal_filter.py
 │   ├── morse_decoder.py
-│   ├── hmm_decoder.py
 │   ├── intelligent_corrector.py
 │   ├── offline_ai.py
 │   ├── ai_predictor.py
@@ -77,18 +77,13 @@ CW_Decoder/
 │   ├── ui_display.py
 │   └── tools/                 # training/testing utilities
 │       ├── data_augmentor.py      # builds noisy train/val sets from data/audio_files/
-│       ├── generate_training_pairs.py
-│       ├── hmm_trainer.py         # trains models/hmm_model.pkl
-│       └── batch_tester.py        # scores MorseDecoder vs HMMDecoder → results/batch_report.json
+│       └── generate_training_pairs.py
 ├── models/
-│   ├── hmm_model.pkl
 │   └── offline_ai_model/      # fine-tuned T5 weights + tokenizer
 ├── data/
 │   ├── audio_files/           # source recordings for training/practice
 │   ├── augmented_data/        # noise-augmented train/val split
 │   └── morse_training_pairs.csv
-├── results/
-│   └── batch_report.json      # latest batch_tester.py accuracy report
 └── recordings/                # saved live-decode sessions (audio + logs)
 ```
 
