@@ -35,6 +35,8 @@ _SDR_CMAP = LinearSegmentedColormap.from_list(
 
 
 class UIDisplay:
+    """SDR-style desktop GUI: loads/decodes audio files or live input and shows results."""
+
     def __init__(self, groq_api_key=None):
         self.groq_api_key = groq_api_key
         self.audio_file = None
@@ -81,9 +83,11 @@ class UIDisplay:
     # ── small helpers ─────────────────────────────────────────────────────────
 
     def _spaced(self, text):
+        """Insert spaces between characters, for the letter-spaced label style."""
         return " ".join(list(text))
 
     def _make_outline_button(self, parent, text, command, border_color, text_color=None, state="normal"):
+        """Create a bordered button that highlights green on hover."""
         text_color = text_color or border_color
         btn = ctk.CTkButton(
             parent, text=text, command=command, state=state,
@@ -104,12 +108,14 @@ class UIDisplay:
         return btn
 
     def _set_status(self, text, color):
+        """Update the status bar text and its indicator dot color."""
         self.status_label.configure(text=text, text_color=color)
         self.status_dot.configure(text_color=color)
 
     # ── left panel ────────────────────────────────────────────────────────────
 
     def _build_left_panel(self):
+        """Build the left control panel: frequency, WPM/signal readouts, device picker, buttons."""
         self.left_panel = ctk.CTkFrame(self.app, fg_color=_PANEL, width=360, corner_radius=0)
         self.left_panel.pack(side="left", fill="y")
         self.left_panel.pack_propagate(False)
@@ -229,6 +235,7 @@ class UIDisplay:
         self.status_label.pack(side="left")
 
     def _populate_devices(self):
+        """List available audio input devices in the device dropdown."""
         try:
             devices = sd.query_devices()
             input_devices = [(i, d["name"]) for i, d in enumerate(devices) if d["max_input_channels"] > 0]
@@ -334,6 +341,7 @@ class UIDisplay:
                 print(f"[RECORDING] Write error: {e}")
 
     def start_live(self):
+        """Start live capture/decoding on the selected input device."""
         if self._live_mode:
             return
 
@@ -632,6 +640,7 @@ class UIDisplay:
     # ── right panel ───────────────────────────────────────────────────────────
 
     def _build_right_panel(self):
+        """Build the right panel: waveform, waterfall, and text-box rows."""
         self.right_panel = ctk.CTkFrame(self.app, fg_color=_BG, corner_radius=0)
         self.right_panel.pack(side="left", fill="both", expand=True)
         self.right_panel.columnconfigure(0, weight=1)
@@ -644,6 +653,7 @@ class UIDisplay:
         self._build_text_boxes()
 
     def _build_waveform(self):
+        """Build the empty waveform panel frame (populated on decode)."""
         wave_frame = ctk.CTkFrame(self.right_panel, fg_color=_BG)
         wave_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 4))
         ctk.CTkLabel(wave_frame, text=self._spaced("SIGNAL WAVEFORM"), font=ctk.CTkFont(size=9), text_color=_MUTED2).pack(anchor="w")
@@ -652,6 +662,7 @@ class UIDisplay:
         self.graph_frame.pack(fill="both", expand=True, pady=(2, 0))
 
     def _build_waterfall(self):
+        """Build the waterfall panel frame and its idle placeholder."""
         water_frame = ctk.CTkFrame(self.right_panel, fg_color=_BG)
         water_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=4)
         ctk.CTkLabel(water_frame, text=self._spaced("WATERFALL"), font=ctk.CTkFont(size=9), text_color=_MUTED2).pack(anchor="w")
@@ -661,6 +672,7 @@ class UIDisplay:
         self._build_waterfall_idle()
 
     def _build_waterfall_idle(self):
+        """Draw a blank spectrogram figure shown before any decode has run."""
         fig, ax = plt.subplots(figsize=(8, 2.6))
         fig.patch.set_facecolor(_BG)
         ax.set_facecolor(_BG)
@@ -680,6 +692,7 @@ class UIDisplay:
         self.waterfall_canvas = canvas
 
     def _update_waterfall(self, audio, sr):
+        """Render a spectrogram of the decoded file, zoomed to the active tone."""
         try:
             n_fft, hop = 512, 256
             if len(audio) <= n_fft:
@@ -726,6 +739,7 @@ class UIDisplay:
             print(f"Waterfall update error: {exc}")
 
     def _build_text_boxes(self):
+        """Build the raw-decode and AI-correction text panes."""
         text_frame = ctk.CTkFrame(self.right_panel, fg_color=_BG)
         text_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(4, 12))
         text_frame.columnconfigure(0, weight=1)
@@ -783,6 +797,7 @@ class UIDisplay:
     # ── animations ────────────────────────────────────────────────────────────
 
     def _animate_smeter(self):
+        """Tick the S-meter bar animation while signal/playback is active."""
         lit = random.randint(4, 7) if self._smeter_active else 0
         for i, bar in enumerate(self.smeter_bars):
             bar.configure(fg_color=self._smeter_bright[i] if i < lit else self._smeter_dim[i])
@@ -790,6 +805,7 @@ class UIDisplay:
         self.app.after(200, self._animate_smeter)
 
     def _animate_status_pulse(self):
+        """Blink the status indicator dot on/off on a fixed interval."""
         self._pulse_on = not self._pulse_on
         base_color = self.status_label.cget("text_color")
         self.status_dot.configure(text_color=base_color if self._pulse_on else _MUTED2)
@@ -798,6 +814,7 @@ class UIDisplay:
     # ── WPM ───────────────────────────────────────────────────────────────────
 
     def _estimate_wpm(self, events):
+        """Estimate words-per-minute from the shortest gap between decoded symbols."""
         symbol_times = [t for t, et, _ in events if et == "symbol"]
         if len(symbol_times) < 2:
             return None
@@ -813,6 +830,7 @@ class UIDisplay:
     # ── file loading ──────────────────────────────────────────────────────────
 
     def load_file(self):
+        """Open a file picker and store the chosen audio file path."""
         file_path = filedialog.askopenfilename(
             filetypes=[("Audio Files", "*.wav *.mp3 *.oga *.ogg")]
         )
@@ -825,6 +843,7 @@ class UIDisplay:
     # ── playback helpers ──────────────────────────────────────────────────────
 
     def play_audio(self):
+        """Play the loaded audio file without decoding it."""
         if not self.audio_file:
             return
         self._cancel_animation()
@@ -847,6 +866,7 @@ class UIDisplay:
         self._playback_thread.start()
 
     def stop_audio(self):
+        """Stop playback and/or live decoding, whichever is active."""
         # Stop live decoder if running
         if self._live_mode:
             self._live_mode = False
@@ -871,18 +891,21 @@ class UIDisplay:
         self._on_playback_done()
 
     def _on_playback_done(self):
+        """Reset playback-related button/status state once audio finishes."""
         self.play_btn.configure(state="normal" if self.audio_file else "disabled")
         self.stop_btn.configure(state="disabled")
         self._smeter_active = False
         self._set_status("READY", _MUTED)
 
     def _cancel_animation(self):
+        """Bump the decode session counter to invalidate any pending animation callbacks."""
         self._loading = False
         self._decode_session += 1
         self._current_morse = ""
         self.morse_label.configure(text="")
 
     def _start_spinner(self, session):
+        """Show an animated 'Processing...' spinner while decoding runs in the background."""
         self._loading = True
         frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         idx = [0]
@@ -899,12 +922,14 @@ class UIDisplay:
         _tick()
 
     def _stop_spinner(self):
+        """Hide the processing spinner."""
         self._loading = False
         self.morse_label.configure(text="")
 
     # ── moving playhead ───────────────────────────────────────────────────────
 
     def _update_playhead(self, session):
+        """Move the vertical playhead line across the waveform as playback progresses."""
         if self._decode_session != session or self._playhead is None:
             return
         elapsed = time.time() - self._decode_start_time
@@ -917,12 +942,14 @@ class UIDisplay:
     # ── animated decode callbacks ─────────────────────────────────────────────
 
     def _show_symbol(self, session, symbol):
+        """Append a dot/dash to the live morse-symbol label, timed to playback."""
         if self._decode_session != session:
             return
         self._current_morse += symbol
         self.morse_label.configure(text=self._current_morse)
 
     def _show_letter(self, session, letter):
+        """Commit a decoded letter to the text box, timed to playback."""
         if self._decode_session != session:
             return
         self._current_morse = ""
@@ -930,6 +957,7 @@ class UIDisplay:
         self.text_box.insert("end", letter)
 
     def _show_word(self, session):
+        """Insert a word-space into the text box, timed to playback."""
         if self._decode_session != session:
             return
         self._current_morse = ""
@@ -939,6 +967,7 @@ class UIDisplay:
     # ── main decode ───────────────────────────────────────────────────────────
 
     def decode(self):
+        """Run the full decode pipeline on the loaded file in a background thread."""
         if not self.audio_file:
             self.file_label.configure(text="Please load a file first!", text_color=_RED)
             return
@@ -992,18 +1021,23 @@ class UIDisplay:
         threading.Thread(target=_process, daemon=True).start()
 
     def _set_offline_text(self, session, text):
+        """Show the offline T5 correction result once the decode session settles."""
         if self._decode_session != session:
             return
         self.ai_text_box.delete("1.0", "end")
         self.ai_text_box.insert("end", text)
 
     def _set_groq_text(self, session, text):
+        """Show the Groq correction result once the decode session settles."""
         if self._decode_session != session:
             return
         self.groq_text_box.delete("1.0", "end")
         self.groq_text_box.insert("end", text)
 
     def _on_decode_ready(self, session, y, sr, filtered, events, offline_text="", groq_text="", raw_data=None, raw_sr=None):
+        """Runs on the main thread once background decoding finishes — builds the
+        waveform/waterfall figures, starts audio playback, and schedules the
+        timed symbol/letter/word callbacks and AI text updates."""
         if self._decode_session != session:
             return
 
@@ -1083,6 +1117,7 @@ class UIDisplay:
             self.app.after(settle_ms, lambda s=session, txt=groq_text: self._set_groq_text(s, txt))
 
     def toggle_ai(self):
+        """Show or hide the AI-correction panel."""
         if self.ai_visible:
             self.ai_frame.grid_remove()
             self.ai_btn.configure(text="◈ SHOW AI PREDICTION")
@@ -1093,6 +1128,7 @@ class UIDisplay:
             self.ai_visible = True
 
     def on_close(self):
+        """Stop any live decoding/recording and tear down the window on exit."""
         if self._live_decoder:
             self._live_decoder.stop()
         self._stop_recording()
@@ -1101,4 +1137,5 @@ class UIDisplay:
         self.app.destroy()
 
     def show(self):
+        """Start the Tkinter event loop, blocking until the window is closed."""
         self.app.mainloop()

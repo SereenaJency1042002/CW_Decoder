@@ -95,6 +95,7 @@ Requires Python 3.11+.
 
 ```bash
 git clone https://github.com/SereenaJency1042002/CW_Decoder.git
+
 cd CW_Decoder
 python -m venv venv
 venv\Scripts\activate        # Windows PowerShell

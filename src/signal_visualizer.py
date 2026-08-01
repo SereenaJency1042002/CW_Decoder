@@ -2,11 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class SignalVisualizer:
+    """Renders the time-domain waveform (oscilloscope view) of an audio signal."""
+
     def __init__(self, y, sr):
         self.audio_data = y
         self.sampling_rate = sr
-        
+
     def plot(self):
+        """Open a standalone matplotlib window with the full waveform."""
         plt.figure(figsize=(12, 6))
         time = np.linspace(0, len(self.audio_data) / self.sampling_rate, len(self.audio_data))
         plt.plot(time, self.audio_data)
@@ -17,6 +20,7 @@ class SignalVisualizer:
         plt.show()
         
     def get_figure(self):
+        """Build a downsampled, styled matplotlib Figure for embedding in the GUI."""
         fig, ax = plt.subplots(figsize=(8, 3))
         data = self.audio_data
         max_points = 5000

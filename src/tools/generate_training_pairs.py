@@ -15,6 +15,7 @@ OUTPUT_FILE = "data/morse_training_pairs.csv"
 PROSIGNS = ['CQ', 'DE', 'AR', 'SK', 'BK', 'KN', 'AS', 'TU', 'BT']
 
 def corrupt_question_marks(text: str, rate: float = 0.2) -> str:
+    """Replace some tokens (or parts of them) with '?', simulating undecodable symbols."""
     tokens = text.split()
     result = []
     for token in tokens:
@@ -33,6 +34,7 @@ def corrupt_question_marks(text: str, rate: float = 0.2) -> str:
     return ' '.join(result)
 
 def corrupt_timing_errors(text: str) -> str:
+    """Simulate common mis-timed decodes, e.g. TU->TA, CQ->CQCQ."""
     replacements = {
         'TU':  'TA',
         '5NN': '5N',
@@ -50,6 +52,7 @@ def corrupt_timing_errors(text: str) -> str:
     return ' '.join(result)
 
 def corrupt_duplicates(text: str) -> str:
+    """Randomly repeat prosigns, simulating over-eager re-transmission."""
     tokens = text.split()
     result = []
     for token in tokens:
@@ -60,6 +63,7 @@ def corrupt_duplicates(text: str) -> str:
     return ' '.join(result)
 
 def corrupt_heavy(text: str, rate: float = 0.5) -> str:
+    """Replace whole tokens with '?' at a high rate, simulating poor SNR."""
     tokens = text.split()
     result = []
     for token in tokens:
@@ -70,6 +74,7 @@ def corrupt_heavy(text: str, rate: float = 0.5) -> str:
     return ' '.join(result)
 
 def corrupt_combined(text: str) -> str:
+    """Stack timing, question-mark, and duplicate corruption for a harder example."""
     text = corrupt_timing_errors(text)
     text = corrupt_question_marks(text, rate=0.15)
     text = corrupt_duplicates(text)
@@ -84,6 +89,7 @@ CORRUPTION_FUNCTIONS = [
 ]
 
 def load_all_labels() -> list:
+    """Collect all unique expected_text values across the known labels.csv files."""
     texts = set()
     for path in LABEL_FILES:
         if not os.path.exists(path):
@@ -99,6 +105,7 @@ def load_all_labels() -> list:
     return list(texts)
 
 def generate():
+    """Build (corrupted_text, correct_text) pairs and write them to OUTPUT_FILE for T5 training."""
     print("Generating Morse training pairs...")
     print("-" * 50)
     correct_texts = load_all_labels()
