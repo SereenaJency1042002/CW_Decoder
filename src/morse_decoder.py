@@ -113,7 +113,6 @@ MORSE_CODE_DICT = {
     '.-...':  'AS',
     '---...': ':',
     '-.-.-.': ';',
-    '.-.-.':  '+',
     '-....-': '-',
     '..--.-': '_',
     '.-..-.': '"',
@@ -127,7 +126,7 @@ MORSE_CODE_DICT = {
     # '-.-.': 'CT' omitted — duplicates 'C' key, causes every C to decode as CT
     '...-.':  'SN',  # Understood
     '...-.-': 'SK',  # End of contact
-    # '.-.-.': 'AR' omitted — duplicates '+' key
+    '.-.-.':  'AR',  # End of message (shares pattern with '+', rarely sent in CW)
     '-...-.-':'BK',  # Break
     '........': 'HH',  # Error — disregard (8 dots)
     '-...-':  'BT',  # Break/pause (was '=', rarely used as punctuation)
