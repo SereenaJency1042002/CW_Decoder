@@ -19,7 +19,7 @@ CALIBRATION_CHUNKS = 5  # wait 5 seconds before first decode
 class LiveDecoder:
     def __init__(self, device=None, sample_rate=16000,
                  on_text_callback=None, on_status_callback=None,
-                 on_audio_callback=None):
+                 on_audio_callback=None, on_wpm_callback=None):
         """
         device: sounddevice device index or name. None = system default.
         sample_rate: audio sample rate. Default 16000Hz.
@@ -28,12 +28,15 @@ class LiveDecoder:
             UI should append this to existing text box content.
         on_status_callback(status: str): called with status messages like
             "CALIBRATING 4s", "LIVE", "ERROR", "STOPPED"
+        on_wpm_callback(wpm: int): called with the estimated words-per-minute
+            whenever a chunk yields a usable dot-duration measurement.
         """
         self.device = device
         self.sample_rate = sample_rate
         self.on_text_callback = on_text_callback
         self.on_status_callback = on_status_callback
         self.on_audio_callback = on_audio_callback
+        self.on_wpm_callback = on_wpm_callback
 
         # Rolling buffer — always holds last 3 seconds of audio
         self._buffer = np.zeros(BUFFER_SAMPLES, dtype=np.float32)
@@ -48,12 +51,9 @@ class LiveDecoder:
         self._dot_threshold = None  # learned during calibration
         self._live_announced = False
 
-        # Session logging/diagnostics state
+        # Session diagnostics state
         self._session_start    = None
         self._session_freq     = "unknown"
-        self._anomaly_log      = []
-        self._last_snr         = None
-        self._last_peak_freq   = None
         self._chunk_count      = 0
         self._total_pulses     = 0
         self._total_questions  = 0
@@ -61,7 +61,6 @@ class LiveDecoder:
         self._best_period_start = None
         self._best_period_end   = None
         self._best_period_score = 0.0
-        self._log_path         = None
 
     def start(self):
         """Start capturing and decoding live audio."""
@@ -74,12 +73,9 @@ class LiveDecoder:
         # on_audio_callback already set in __init__, no reset needed
         self._buffer = np.zeros(BUFFER_SAMPLES, dtype=np.float32)
 
-        # Reset session logging/diagnostics state
+        # Reset session diagnostics state
         self._session_start    = datetime.now()
         self._session_freq     = "unknown"
-        self._anomaly_log      = []
-        self._last_snr         = None
-        self._last_peak_freq   = None
         self._chunk_count      = 0
         self._total_pulses     = 0
         self._total_questions  = 0
@@ -87,7 +83,6 @@ class LiveDecoder:
         self._best_period_start = None
         self._best_period_end   = None
         self._best_period_score = 0.0
-        self._log_path         = None
 
         # Open sounddevice input stream
         # blocksize=CHUNK_SAMPLES means callback fires exactly every 1 second
@@ -130,13 +125,6 @@ class LiveDecoder:
     def set_frequency(self, freq_str: str):
         """Called from UI when user sets frequency."""
         self._session_freq = freq_str.strip()
-        if self._session_start and not self._log_path:
-            ts = self._session_start.strftime("%Y-%m-%d_%H-%M-%S")
-            clean_freq = self._session_freq.replace('.', '')
-            self._log_path = os.path.join(
-                "recordings",
-                f"session_{ts}_{clean_freq}kHz.log"
-            )
 
     def _elapsed(self) -> str:
         """Return elapsed time as MM:SS string."""
@@ -162,26 +150,7 @@ class LiveDecoder:
             return 0.0
         return round(float(freqs[mask][np.argmax(fft[mask])]), 1)
 
-    def _log_anomaly(self, tag: str, message: str, metrics: dict):
-        """Write anomaly to log file and memory."""
-        entry = {
-            "time":    self._elapsed(),
-            "tag":     tag,
-            "message": message,
-            "metrics": metrics,
-        }
-        self._anomaly_log.append(entry)
-
-        if self._log_path:
-            os.makedirs("recordings", exist_ok=True)
-            with open(self._log_path, 'a', encoding='utf-8') as f:
-                f.write(f"\n[t={entry['time']}] {tag} — {message}\n")
-                for k, v in metrics.items():
-                    f.write(f"          {k}: {v}\n")
-
-    def _print_live_status(self, snr: float, peak_freq: float,
-                            dot_ms: float, dash_ms: float,
-                            ratio: float, q_rate: float):
+    def _print_live_status(self, snr: float, peak_freq: float):
         """Print single updating status line to terminal."""
         line = (
             f"[LIVE {self._elapsed()}] "
@@ -211,23 +180,16 @@ class LiveDecoder:
         print(f"Total chunks:    {self._chunk_count}")
         print(f"Total pulses:    {self._total_pulses}")
         print(f"Confusion rate:  {q_rate:.1%}")
-        print(f"Anomalies logged: {len(self._anomaly_log)}")
         if self._best_period_start:
             print(f"Best period:     "
                   f"t={self._best_period_start} → t={self._best_period_end}")
-        if self._log_path and os.path.exists(self._log_path):
-            print(f"Log saved:       {self._log_path}")
         print("━" * 50)
-
-        if self._anomaly_log:
-            print(f"  → Full anomaly log: {self._log_path}")
         print()
 
     def _analyse_chunk(self, audio: np.ndarray, decoded_text: str):
         """
         Analyse each decoded chunk.
         Updates live status line.
-        Logs anomalies when thresholds exceeded.
         Tracks session statistics.
         """
         self._chunk_count += 1
@@ -273,61 +235,16 @@ class LiveDecoder:
                 on_durs.append((count * hop_length) / self.sample_rate * 1000)
 
             if len(on_durs) >= 2:
-                dot_ms  = float(np.percentile(on_durs, 30))
-                dash_ms = float(np.percentile(on_durs, 70))
-                ratio   = dash_ms / (dot_ms + 1e-9)
+                dot_ms = float(np.percentile(on_durs, 30))
                 self._total_pulses += len(on_durs)
             else:
-                dot_ms = dash_ms = ratio = 0.0
+                dot_ms = 0.0
         except Exception:
-            dot_ms = dash_ms = ratio = 0.0
+            dot_ms = 0.0
 
-        # Determine status and log anomalies
-        status   = "STABLE"
-        metrics  = {
-            "SNR":       f"{snr:.1f}dB",
-            "freq":      f"{peak_freq:.0f}Hz",
-            "dot":       f"{dot_ms:.0f}ms",
-            "dash":      f"{dash_ms:.0f}ms",
-            "ratio":     f"{ratio:.2f}x",
-            "confusion": f"{q_rate:.1%}",
-        }
-
-        if not on_durs:
-            status = "NO SIGNAL"
-            self._log_anomaly("NO SIGNAL",
-                              "No pulses detected — transmission gap or station off",
-                              metrics)
-        elif q_rate > 0.50:
-            status = "HIGH QRM"
-            self._log_anomaly("HIGH QRM",
-                              "50%+ confusion — multiple stations or heavy interference",
-                              metrics)
-        elif q_rate > 0.25:
-            status = "CONFUSION"
-            self._log_anomaly("HIGH CONFUSION",
-                              "25%+ unrecognized — weak signal or timing errors",
-                              metrics)
-        elif ratio > 0 and (ratio < 2.0 or ratio > 4.0):
-            status = "TIMING"
-            self._log_anomaly("TIMING UNSTABLE",
-                              f"ratio={ratio:.2f}x outside normal range 2.0-4.0x",
-                              metrics)
-        elif snr < 8.0:
-            status = "WEAK"
-            self._log_anomaly("WEAK SIGNAL",
-                              f"SNR={snr:.1f}dB below threshold — consider retuning",
-                              metrics)
-
-        # Track frequency drift
-        if self._last_peak_freq and peak_freq > 0:
-            drift = abs(peak_freq - self._last_peak_freq)
-            if drift > 50:
-                status = "DRIFT"
-                self._log_anomaly("FREQUENCY DRIFT",
-                                  f"{self._last_peak_freq:.0f}Hz → {peak_freq:.0f}Hz",
-                                  metrics)
-        self._last_peak_freq = peak_freq
+        if dot_ms > 0 and self.on_wpm_callback:
+            wpm = round(1200 / dot_ms)
+            self.on_wpm_callback(max(5, min(60, wpm)))
 
         # Track best period (lowest confusion)
         if chars > 0 and q_rate < self._best_period_score or self._best_period_start is None:
@@ -339,9 +256,7 @@ class LiveDecoder:
                 self._best_period_end = self._elapsed()
 
         # Print live status line
-        self._print_live_status(
-            snr, peak_freq, dot_ms, dash_ms, ratio, q_rate
-        )
+        self._print_live_status(snr, peak_freq)
 
     def _audio_callback(self, indata, frames, time_info, status):
         """

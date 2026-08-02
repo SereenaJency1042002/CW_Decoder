@@ -5,5 +5,5 @@ data/augmented_data/
 dist/
 build/
 .env
-models/offline_ai_model/model_state.pt
+models/offline_ai_model/model.safetensors
 recordings/

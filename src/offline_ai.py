@@ -36,9 +36,9 @@ def _load_model():
         print("[OfflineAI] Model directory not found — using rules")
         return False
 
-    model_state = os.path.join(MODEL_DIR, "model_state.pt")
-    if not os.path.exists(model_state):
-        print("[OfflineAI] model_state.pt not found — using rules")
+    model_weights = os.path.join(MODEL_DIR, "model.safetensors")
+    if not os.path.exists(model_weights):
+        print("[OfflineAI] model.safetensors not found — using rules")
         return False
 
     try:
@@ -55,20 +55,12 @@ def _load_model():
             MODEL_DIR, local_files_only=True
         )
 
-        # Load T5 architecture from HuggingFace cache
-        # (already cached from first run)
+        # Load fine-tuned T5 (architecture + weights) fully from the
+        # bundled folder — no dependence on the HuggingFace hub cache
         from transformers import T5ForConditionalGeneration
         _model = T5ForConditionalGeneration.from_pretrained(
-            "google-t5/t5-small", low_cpu_mem_usage=False
+            MODEL_DIR, local_files_only=True, low_cpu_mem_usage=False
         )
-
-        # Load OUR trained weights on top
-        state_dict = torch.load(
-            model_state,
-            map_location=_device,
-            weights_only=True
-        )
-        _model.load_state_dict(state_dict, strict=False)
         _model = _model.to(_device)
         _model.eval()
         print("[OfflineAI] T5 model loaded")

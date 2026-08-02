@@ -364,6 +364,7 @@ class UIDisplay:
         self._live_text_buffer = ""
         self._live_ai_tick = 0
         self._smeter_active = True
+        self.wpm_value_label.configure(text="---")
         self.start_live_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
         self.decode_btn.configure(state="disabled")
@@ -378,6 +379,7 @@ class UIDisplay:
             on_text_callback=self._on_live_text,
             on_status_callback=self._on_live_status,
             on_audio_callback=self._on_live_audio,
+            on_wpm_callback=self._on_live_wpm,
         )
         self._live_decoder.start()
         self._live_decoder.set_frequency(self.freq_entry.get())
@@ -450,6 +452,13 @@ class UIDisplay:
             self.app.after(0, lambda: self._set_status("● LIVE", _GREEN))
         elif status == "STOPPED":
             self.app.after(0, lambda: self._set_status("READY", _MUTED))
+
+    def _on_live_wpm(self, wpm: int):
+        """
+        Called from LiveDecoder background thread with an updated WPM estimate.
+        Must use app.after() to update UI safely from background thread.
+        """
+        self.app.after(0, lambda w=wpm: self.wpm_value_label.configure(text=str(w)))
 
     def _on_live_audio(self, audio: np.ndarray, sr: int):
         """
