@@ -209,6 +209,40 @@ class MorseDecoder:
             return None
         return float(np.percentile(on_durations, 30))
 
+    def _derive_gap_thresholds(self, off_durations, unit: float) -> tuple[float, float]:
+        """
+        Find the intra-character / inter-character / inter-word gap
+        boundaries directly from the audio's own gap durations.
+
+        Farnsworth-timed audio (common in code-practice files) keeps dots
+        and dashes fast but stretches the gaps independently to reach the
+        target effective WPM — so inter-character gaps can be 15-20x the
+        dot unit instead of the standard 3x. Deriving thresholds from a
+        fixed multiple of the dot unit misclassifies every letter gap as
+        a word gap in that case.
+
+        Intra-character gaps are always ~1 dot unit, so that split stays
+        a fixed rule. For the word boundary, clustering the remaining
+        "big" gaps directly is fragile — a single unusually long pause
+        (e.g. between repeated calls) dominates k-means and drags the
+        split too high. Instead we lean on a property Farnsworth timing
+        preserves: inter-word gaps are a near-constant ~7:3 ratio above
+        inter-character gaps, however much both are stretched. Estimating
+        the character-gap value from a low percentile (inter-character
+        gaps normally outnumber inter-word gaps in running text) and
+        placing the word boundary at that ratio is robust to outliers.
+        """
+        inter_char_threshold = unit * 2.5
+
+        big_gaps = off_durations[off_durations >= inter_char_threshold]
+        if len(big_gaps) == 0:
+            return inter_char_threshold, unit * 6.0
+
+        char_gap_estimate = float(np.percentile(big_gaps, 40))
+        word_gap_threshold = char_gap_estimate * 1.8
+
+        return inter_char_threshold, word_gap_threshold
+
     def decode_with_timing(self):
         frame_length = max(64, int(self.sr * 0.01))
         hop_length = frame_length // 2
@@ -284,11 +318,13 @@ class MorseDecoder:
                 split = float('inf')
                 dot_center = float(np.mean(on_durations))
 
-        # Derive gap thresholds from unit (dot) duration — Morse timing ratios
-        # intra-char gap ≈ 1 unit, inter-char ≈ 3 units, inter-word ≈ 7 units
         unit = dot_center
-        inter_char_threshold = unit * 2.5
-        word_gap_threshold   = unit * 6.0
+        off_durations = np.array(
+            [d for s, d, _ in segments if not s], dtype=float
+        )
+        inter_char_threshold, word_gap_threshold = self._derive_gap_thresholds(
+            off_durations, unit
+        )
 
         events = []
         current_char = []
