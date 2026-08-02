@@ -79,7 +79,7 @@ CW_Decoder/
 │       ├── data_augmentor.py      # builds noisy train/val sets from data/audio_files/
 │       └── generate_training_pairs.py
 ├── models/
-│   └── offline_ai_model/      # fine-tuned T5 weights + tokenizer
+│   └── offline_ai_model/      # fine-tuned T5 weights + tokenizer (weights downloaded separately, see below)
 ├── data/
 │   ├── audio_files/           # source recordings for training/practice
 │   ├── augmented_data/        # noise-augmented train/val split
@@ -100,6 +100,11 @@ cd CW_Decoder
 python -m venv venv
 venv\Scripts\activate        # Windows PowerShell
 pip install .
+```
+
+The fine-tuned offline AI weights (`model.safetensors`, ~240MB) are too large for git and are distributed as a [release asset](https://github.com/SereenaJency1042002/CW_Decoder/releases/tag/assets-v1) instead. Download it and place it in `models/offline_ai_model/model.safetensors` — without it, the app still runs and decodes fine, just falling back to rule-based correction instead of the AI layer.
+
+```bash
 python main.py
 ```
 
