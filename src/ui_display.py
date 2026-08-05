@@ -1,5 +1,4 @@
 import os
-import random
 import threading
 import time
 from tkinter import filedialog
@@ -12,6 +11,7 @@ import soundfile as sf
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.colors import LinearSegmentedColormap
 from src.live_decoder import LiveDecoder
+from src.signal_filter import SignalFilter
 
 ctk.set_appearance_mode("dark")
 
@@ -51,6 +51,7 @@ class UIDisplay:
         self.ai_visible = False
         self._loading = False
         self._smeter_active = False
+        self._smeter_level = 0  # 0-9, driven by measured SNR — see _snr_to_s_units
         self._pulse_on = False
         self._live_decoder = None
         self._live_mode = False
@@ -472,6 +473,11 @@ class UIDisplay:
         """
         Runs on main thread — updates waveform, waterfall, and recording.
         """
+        try:
+            snr = SignalFilter(audio, sr).get_snr()
+            self._smeter_level = self._snr_to_s_units(snr)
+        except Exception:
+            pass
         self._update_live_waveform(audio, sr)
         self._update_live_waterfall(audio, sr)
         # Write latest chunk to recording file
@@ -805,9 +811,24 @@ class UIDisplay:
 
     # ── animations ────────────────────────────────────────────────────────────
 
+    def _snr_to_s_units(self, snr_db: float) -> int:
+        """
+        Map a measured SNR (dB) to a 1-9 S-meter reading using the
+        standard ~6dB-per-S-unit spacing. Not a calibrated RF S-meter
+        (no dBµV/S9=-73dBm reference — this SNR is the CW tone's peak
+        vs. its own noise floor, from SignalFilter.get_snr()), but it
+        moves with the actual measured signal instead of being fixed.
+        """
+        if snr_db <= 0:
+            return 0
+        return max(1, min(9, round(snr_db / 6)))
+
     def _animate_smeter(self):
-        """Tick the S-meter bar animation while signal/playback is active."""
-        lit = random.randint(4, 7) if self._smeter_active else 0
+        """Tick the S-meter bar redraw while signal/playback is active.
+        Reads self._smeter_level, which is updated elsewhere from real
+        measured SNR (live audio each second, or the loaded file's SNR
+        for file playback/decode) — this method only renders it."""
+        lit = self._smeter_level if self._smeter_active else 0
         for i, bar in enumerate(self.smeter_bars):
             bar.configure(fg_color=self._smeter_bright[i] if i < lit else self._smeter_dim[i])
         self.signal_value_label.configure(text=f"S{lit}" if lit else "S--")
@@ -822,18 +843,47 @@ class UIDisplay:
 
     # ── WPM ───────────────────────────────────────────────────────────────────
 
-    def _estimate_wpm(self, events):
-        """Estimate words-per-minute from the shortest gap between decoded symbols."""
-        symbol_times = [t for t, et, _ in events if et == "symbol"]
-        if len(symbol_times) < 2:
+    def _estimate_wpm(self, filtered_audio, sr):
+        """Estimate words-per-minute from actual dot-pulse durations (RMS envelope),
+        same approach as LiveDecoder's calibration — not from symbol start-time gaps,
+        which conflate pulse duration with the following gap and read ~half true WPM."""
+        import librosa
+        frame_length = max(64, int(sr * 0.01))
+        hop_length = frame_length // 2
+        rms = librosa.feature.rms(
+            y=filtered_audio, frame_length=frame_length, hop_length=hop_length
+        )[0]
+        noise_floor = np.max(rms) * 0.05
+        active_rms = rms[rms > noise_floor]
+        if len(active_rms) == 0:
             return None
-        deltas = [b - a for a, b in zip(symbol_times, symbol_times[1:]) if b - a > 0]
-        if not deltas:
+        threshold = np.median(active_rms) * 0.6
+        signal_on = rms > threshold
+
+        on_durs = []
+        count = 0
+        for val in signal_on:
+            if val:
+                count += 1
+            else:
+                if count > 0:
+                    on_durs.append(count)
+                    count = 0
+        if count > 0:
+            on_durs.append(count)
+        if len(on_durs) < 2:
             return None
-        unit = min(deltas)
-        if unit <= 0:
+
+        on_durs = np.array(on_durs, dtype=float)
+        min_dur = np.mean(on_durs) * 0.3
+        on_durs = on_durs[on_durs >= min_dur]
+        if len(on_durs) < 2:
             return None
-        wpm = round(1.2 / unit)
+
+        dot_sec = (np.percentile(on_durs, 30) * hop_length) / sr
+        if dot_sec <= 0:
+            return None
+        wpm = round(1.2 / dot_sec)
         return max(5, min(60, wpm))
 
     # ── file loading ──────────────────────────────────────────────────────────
@@ -866,6 +916,12 @@ class UIDisplay:
         def _play():
             try:
                 data, samplerate = sf.read(self.audio_file)
+                try:
+                    mono = data if data.ndim == 1 else data.mean(axis=1)
+                    snr = SignalFilter(mono, samplerate).get_snr()
+                    self._smeter_level = self._snr_to_s_units(snr)
+                except Exception:
+                    self._smeter_level = 0
                 sd.play(data, samplerate)
                 sd.wait()
             finally:
@@ -1079,8 +1135,14 @@ class UIDisplay:
         self._canvas_ref = canvas
 
         self._update_waterfall(filtered, sr)
-        wpm = self._estimate_wpm(events)
+        wpm = self._estimate_wpm(filtered, sr)
         self.wpm_value_label.configure(text=str(wpm) if wpm else "---")
+
+        try:
+            snr = SignalFilter(y, sr).get_snr()
+            self._smeter_level = self._snr_to_s_units(snr)
+        except Exception:
+            self._smeter_level = 0
 
         self._audio_duration = len(y) / sr
         self._stop_playback = False
